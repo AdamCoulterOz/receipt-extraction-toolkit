@@ -7,7 +7,7 @@ import path from 'node:path';
 import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION } from './receipt.js';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -20,6 +20,10 @@ function parseCli(argv: string[]): Cli {
     else if (a === '--batch') out.batchFile = argv[++i];
     else if (a?.startsWith('--batch=')) out.batchFile = a.slice(8);
     else if (a === '--quiet') out.quiet = true;
+    else if (a === '--concurrency') { const v = Number(argv[++i]); if (Number.isFinite(v) && v > 0) out.concurrency = v; }
+    else if (a?.startsWith('--concurrency=')) { const v = Number(a.slice(14)); if (Number.isFinite(v) && v > 0) out.concurrency = v; }
+    else if (a === '--log') out.logFile = argv[++i];
+    else if (a?.startsWith('--log=')) out.logFile = a.slice(6);
   }
   return out;
 }
@@ -31,12 +35,31 @@ await fs.mkdir(OUT_DIR, { recursive: true });
 
 // -------- logging ---------
 type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+let logStream: import('node:fs').WriteStream | undefined;
+import fsNode from 'node:fs';
+function initLogStream() {
+  if (cli.logFile && !logStream) {
+    const abs = path.resolve(cli.logFile);
+    fsNode.mkdirSync(path.dirname(abs), { recursive: true });
+    logStream = fsNode.createWriteStream(abs, { flags: 'a' });
+  }
+}
 function log(level: LogLevel, message: string, meta?: Record<string, any>) {
   if (cli.quiet && level === 'info') return; // suppress info when quiet
   const rec: any = { ts: new Date().toISOString(), level, msg: message };
   if (meta) rec.meta = meta;
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify(rec));
+  const line = JSON.stringify(rec);
+  if (!cli.logFile) {
+    // eslint-disable-next-line no-console
+    console.log(line);
+  } else {
+    if (!logStream) initLogStream();
+    logStream!.write(line + '\n');
+    if (level === 'error') {
+      // also mirror errors to stderr for visibility
+      console.error(line);
+    }
+  }
 }
 
 // Simple retry helper
@@ -96,12 +119,32 @@ async function main() {
     if (!listRaw) { console.error('[fatal] Cannot read batch file'); process.exit(1); }
     const urls = listRaw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
     if (!urls.length) { console.error('[fatal] Batch file empty'); process.exit(1); }
-    log('info', 'batch.start', { count: urls.length });
+    const concurrency = cli.concurrency && cli.concurrency > 0 ? cli.concurrency : 1;
+    log('info', 'batch.start', { count: urls.length, concurrency });
     const results: any[] = [];
-    for (let i=0;i<urls.length;i++) {
-      const u = urls[i];
-      const r = await processSingle(u, i+1);
-      results.push(r);
+    if (concurrency === 1) {
+      for (let i=0;i<urls.length;i++) {
+        const u = urls[i];
+        const r = await processSingle(u, i+1);
+        results.push(r);
+      }
+    } else {
+      // simple work queue
+      let idx = 0; let processed = 0;
+      async function worker(workerId: number) {
+        while (true) {
+          const my = idx++;
+            if (my >= urls.length) break;
+          const u = urls[my];
+          log('debug', 'worker.start', { workerId, index: my+1 });
+          const r = await processSingle(u, my+1);
+          results[my] = r;
+          processed++;
+          log('debug', 'worker.done', { workerId, index: my+1, processed });
+        }
+      }
+      const workers = Array.from({ length: Math.min(concurrency, urls.length) }, (_, i)=> worker(i+1));
+      await Promise.all(workers);
     }
     await writeJsonSchema(OUT_DIR); // write once
     const manifest = { ts: new Date().toISOString(), count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, results };
