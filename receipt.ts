@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
 
@@ -32,7 +32,7 @@ export interface ReceiptTotals { currency: string; total: number; totalFormatted
 export interface ReceiptIdentities { externalReceiptId?: string; orderNumber?: string; receiptType?: string; isTaxInvoice?: boolean; }
 export interface ReceiptTimestamps { issuedAtEpoch?: number; issuedAtISO?: string; issuedDate?: string; issuedTime?: string; timezone?: string; }
 export interface MerchantInfo { merchantName?: string; storeName?: string; abn?: string; phone?: string; address?: StoreAddress; }
-export interface ReceiptMeta { schemaVersion: string; source: 'slyp'; fetchedAtISO: string; rawHash?: string; }
+export interface ReceiptMeta { schemaVersion: string; source: 'slyp'; fetchedAtISO: string; rawHash?: string; runId: string; receiptId: string; }
 export interface Receipt {
   meta: ReceiptMeta;
   identities: ReceiptIdentities;
@@ -95,7 +95,7 @@ const zPaymentCardMeta = z.object({ merchantId: z.string().optional(), terminalI
 const zReturnsPolicy = z.object({ barcode: z.string().optional(), periodDays: z.number().optional(), policyText: z.string().optional() });
 const zLoyalty = z.object({ program: z.string().optional(), maskedId: z.string().optional() });
 const zAggregatedItem = zReceiptItem; // identical currently
-const zMeta = z.object({ schemaVersion: z.string(), source: z.literal('slyp'), fetchedAtISO: z.string(), rawHash: z.string().optional() });
+const zMeta = z.object({ schemaVersion: z.string(), source: z.literal('slyp'), fetchedAtISO: z.string(), rawHash: z.string().optional(), runId: z.string(), receiptId: z.string() });
 export const zReceipt = z.object({
   meta: zMeta,
   identities: zIdentities,
@@ -115,7 +115,7 @@ export const zReceipt = z.object({
 // ----------------------
 // Transform
 // ----------------------
-export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: string }): Receipt {
+export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: string; runId?: string }): Receipt {
   const rawItems = Array.isArray(apiReceiptData?.basket_items) ? apiReceiptData.basket_items : [];
   const items: ReceiptItem[] = rawItems.map((entry: any) => {
     const product = entry.product || {};
@@ -197,8 +197,11 @@ export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: s
   // Payment meta
   const paymentCardMeta = parseRawPaymentMeta(apiReceiptData?.raw_payment_data);
 
+  const rawHash = sha256Object(apiReceiptData);
+  const runId = opts?.runId || randomUUID();
+  const receiptId = computeReceiptId(apiReceiptData, { rawHash });
   const cleanReceipt: Receipt = {
-    meta: { schemaVersion: opts?.schemaVersion || SCHEMA_VERSION, source: 'slyp', fetchedAtISO: new Date().toISOString(), rawHash: sha256Object(apiReceiptData) },
+    meta: { schemaVersion: opts?.schemaVersion || SCHEMA_VERSION, source: 'slyp', fetchedAtISO: new Date().toISOString(), rawHash, runId, receiptId },
     identities: { externalReceiptId: apiReceiptData?.external_id, orderNumber: apiReceiptData?.order_number_detail?.value || apiReceiptData?.order_number_detail?.order_number, receiptType: apiReceiptData?.receipt_type, isTaxInvoice: !!apiReceiptData?.is_tax_invoice },
     timestamps: { issuedAtEpoch, issuedAtISO, issuedDate, issuedTime, timezone: apiReceiptData?.merchant_detail?.timezone || apiReceiptData?.issued_at_timezone },
     merchant: { merchantName: apiReceiptData?.root_merchant?.trading_name || apiReceiptData?.issuing_merchant?.trading_name, storeName: apiReceiptData?.store?.name || apiReceiptData?.merchant_detail?.name, abn: apiReceiptData?.merchant_detail?.abn, phone: apiReceiptData?.merchant_detail?.phone_number, address },
@@ -242,6 +245,44 @@ export function validateReceipt(receipt: Receipt) {
   return { validationSuccess: validation.success, issues, sums: { sumLineTotals, aggregatedSum, totalPaid, total: receipt.totals.total, subtotal: receipt.totals.subtotal, taxTotal: receipt.totals.taxTotal } };
 }
 
+// Compute a stable receiptId using available identifying fields
+export function computeReceiptId(api: any, ctx?: { rawHash?: string }) {
+  try {
+    const base = api?.external_id || `${api?.total_price || ''}|${api?.issued_at || ''}|${ctx?.rawHash || ''}`;
+    const h = createHash('sha256'); h.update(String(base)); return h.digest('hex');
+  } catch { return randomUUID(); }
+}
+
+// Redaction: mask potential PII (phone numbers >6 digits, ABN digits, card segments beyond last 4 are already masked)
+export function redactReceipt(receipt: Receipt, opts?: { enforce?: boolean }) {
+  // Redact merchant phone to last 4 digits only
+  if (receipt.merchant.phone) {
+    const digits = receipt.merchant.phone.replace(/\D+/g, '');
+    if (digits.length > 4) receipt.merchant.phone = `***${digits.slice(-4)}`;
+  }
+  // Redact ABN to pattern ***ABN-LAST4
+  if (receipt.merchant.abn) {
+    const digits = receipt.merchant.abn.replace(/\D+/g, '');
+    if (digits.length > 4) receipt.merchant.abn = `***${digits.slice(-4)}`;
+  }
+  // Ensure maskedCard not leaking >4 trailing digits
+  receipt.payments.forEach(p => {
+    if (p.maskedCard && /\d{5,}$/.test(p.maskedCard)) {
+      p.maskedCard = p.maskedCard.replace(/(\d{0,})(\d{4})$/, '**** $2');
+    }
+  });
+  if (opts?.enforce) {
+    const potentialPII: string[] = [];
+    const scan = (s?: string) => { if (!s) return; if (/\d{7,}/.test(s)) potentialPII.push(s); };
+    scan(receipt.merchant.phone);
+    scan(receipt.merchant.abn);
+    if (potentialPII.length) {
+      throw new Error(`PII strict violation: ${potentialPII.length} candidates`);
+    }
+  }
+  return receipt;
+}
+
 // ----------------------
 // JSON Schema Emission
 // ----------------------
@@ -251,5 +292,19 @@ export async function writeJsonSchema(outDir: string) {
     (schema as any).$id = `https://schemas.local/receipt/${SCHEMA_VERSION}/receipt.schema.json`;
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, 'receipt.schema.json'), JSON.stringify(schema, null, 2), 'utf-8');
+  } catch {/* ignore */}
+}
+
+// OpenAPI 3.1 spec emission embedding the JSON Schema
+export async function writeOpenApi(outDir: string) {
+  try {
+    const schema = zodToJsonSchema(zReceipt, 'Receipt');
+    const openapi = {
+      openapi: '3.1.0',
+      info: { title: 'Receipt Extraction API', version: SCHEMA_VERSION },
+      components: { schemas: { Receipt: schema } },
+    };
+    await fs.mkdir(outDir, { recursive: true });
+    await fs.writeFile(path.join(outDir, 'openapi.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
   } catch {/* ignore */}
 }

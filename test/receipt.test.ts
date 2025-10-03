@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { transformReceipt, validateReceipt, SCHEMA_VERSION } from '../receipt.js';
+import { transformReceipt, validateReceipt, SCHEMA_VERSION, redactReceipt, computeReceiptId } from '../receipt.js';
 
 function loadFixture(name: string) {
   const p = path.resolve(__dirname, name);
@@ -31,5 +31,27 @@ describe('transformReceipt', () => {
     const validation = validateReceipt(receipt);
     expect(validation.validationSuccess).toBe(true);
     expect(validation.issues).toHaveLength(0);
+  });
+  it('produces stable receiptId for same input', () => {
+    const r2 = transformReceipt(api, { schemaVersion: SCHEMA_VERSION });
+    expect(receipt.meta.receiptId).toBe(r2.meta.receiptId);
+  });
+});
+
+describe('redaction & multi-payment', () => {
+  const api = loadFixture('fixtures.multi-payment.json');
+  const receipt = transformReceipt(api);
+  it('aggregates payments correctly (sum)', () => {
+    expect(receipt.payments.length).toBe(2);
+    expect(receipt.paymentSummary.totalPaid).toBeCloseTo(receipt.totals.total, 2);
+  });
+  it('redacts merchant PII fields', () => {
+    redactReceipt(receipt, { enforce: true });
+    expect(receipt.merchant.phone).toMatch(/\*{3}\d{4}$/);
+    if (receipt.merchant.abn) expect(receipt.merchant.abn).toMatch(/\*{3}\d{4}$/);
+  });
+  it('receiptId consistent with computeReceiptId()', () => {
+    const recId = computeReceiptId(api, { rawHash: receipt.meta.rawHash });
+    expect(recId).toBe(receipt.meta.receiptId);
   });
 });

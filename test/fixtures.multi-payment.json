@@ -1,0 +1,18 @@
+{
+  "external_id": "R-MULTI-1",
+  "issued_at": 1700001000,
+  "currency_code": "AUD",
+  "basket_items": [
+    { "product": { "name": "Item A", "pricing": { "price": 5.00, "currency_code": "AUD" }, "quantity_purchased": 1 } },
+    { "product": { "name": "Item B", "pricing": { "price": 7.50, "currency_code": "AUD" }, "quantity_purchased": 1 } }
+  ],
+  "payments": [
+    { "name": "VISA (**** 1111)", "amount": 6.00, "payment_method_type": "VISA" },
+    { "name": "MASTERCARD (**** 2222)", "amount": 6.50, "payment_method_type": "MASTERCARD" }
+  ],
+  "total_price": 12.50,
+  "total_tax": 1.14,
+  "tax_details": [ { "title": "GST", "amount": { "price": 1.14, "tax_type": "GST" } } ],
+  "merchant_detail": { "phone_number": "0299988877", "abn": "11 222 333 444" },
+  "root_merchant": { "trading_name": "Multi Merchant" }
+}

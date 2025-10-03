@@ -4,10 +4,10 @@
 import * as pw from 'playwright';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION } from './receipt.js';
+import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, redactReceipt, writeOpenApi } from './receipt.js';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -24,6 +24,7 @@ function parseCli(argv: string[]): Cli {
     else if (a?.startsWith('--concurrency=')) { const v = Number(a.slice(14)); if (Number.isFinite(v) && v > 0) out.concurrency = v; }
     else if (a === '--log') out.logFile = argv[++i];
     else if (a?.startsWith('--log=')) out.logFile = a.slice(6);
+    else if (a === '--pii-strict') out.piiStrict = true;
   }
   return out;
 }
@@ -96,6 +97,7 @@ async function processSingle(url: string, index?: number) {
   await fs.writeFile(path.join(OUT_DIR, rawFile), JSON.stringify(apiReceiptData, null, 2), 'utf-8').catch(()=>{});
 
   const receipt = transformReceipt(apiReceiptData, { schemaVersion: SCHEMA_VERSION });
+  try { redactReceipt(receipt, { enforce: cli.piiStrict }); } catch (e) { if (cli.piiStrict) { log('error', 'pii.strict.fail', { url, error: String(e) }); await browser.close(); return { ok: false, url, reason: 'pii_violation' }; } }
   const validation = validateReceipt(receipt);
   if (cli.strict && (!validation.validationSuccess || validation.issues.length)) {
     log('error', 'strict.validation.fail', { url, issues: validation.issues });
@@ -107,7 +109,7 @@ async function processSingle(url: string, index?: number) {
   const valFile = index != null ? `receipt.${index}.validation.json` : 'receipt.validation.json';
   await fs.writeFile(path.join(OUT_DIR, cleanFile), JSON.stringify(receipt, null, 2), 'utf-8');
   await fs.writeFile(path.join(OUT_DIR, valFile), JSON.stringify(validation, null, 2), 'utf-8');
-  if (index == null) { await writeJsonSchema(OUT_DIR); }
+  if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); }
   await browser.close();
   log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length });
   return { ok: true, url, total: receipt.totals.total, items: receipt.items.length };
@@ -146,7 +148,8 @@ async function main() {
       const workers = Array.from({ length: Math.min(concurrency, urls.length) }, (_, i)=> worker(i+1));
       await Promise.all(workers);
     }
-    await writeJsonSchema(OUT_DIR); // write once
+  await writeJsonSchema(OUT_DIR); // write once
+  await writeOpenApi(OUT_DIR);
     const manifest = { ts: new Date().toISOString(), count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, results };
     await fs.writeFile(path.join(OUT_DIR, 'batch.manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     log('info', 'batch.done', { ok: manifest.ok, failed: manifest.failed });
