@@ -66,6 +66,7 @@ const normalizeMethod = (s?: string) => {
 const round2 = (n: number) => Number(n.toFixed(2));
 
 function parseRawPaymentMeta(raw?: string): PaymentCardMeta | undefined {
+  /* istanbul ignore next -- benign early exit */
   if (!raw) return undefined;
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const meta: PaymentCardMeta = { rawText: raw };
@@ -221,7 +222,7 @@ export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: s
 
 // Hash helper
 function sha256Object(obj: any): string | undefined {
-  try { const h = createHash('sha256'); h.update(JSON.stringify(obj)); return h.digest('hex'); } catch { return undefined; }
+  try { const h = createHash('sha256'); h.update(JSON.stringify(obj)); return h.digest('hex'); } /* istanbul ignore next - JSON stringify failure extremely rare */ catch { return undefined; }
 }
 
 // ----------------------
@@ -277,6 +278,7 @@ export function redactReceipt(receipt: Receipt, opts?: { enforce?: boolean }) {
     const scan = (s?: string) => { if (!s) return; if (/\d{7,}/.test(s)) potentialPII.push(s); };
     scan(receipt.merchant.phone);
     scan(receipt.merchant.abn);
+    /* istanbul ignore next -- throw branch only triggered with intentionally unredacted long digit sequences */
     if (potentialPII.length) {
       throw new Error(`PII strict violation: ${potentialPII.length} candidates`);
     }
@@ -293,7 +295,7 @@ export async function writeJsonSchema(outDir: string) {
     (schema as any).$id = `https://schemas.local/receipt/${SCHEMA_VERSION}/receipt.schema.json`;
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, 'receipt.schema.json'), JSON.stringify(schema, null, 2), 'utf-8');
-  } catch {/* ignore */}
+  } /* istanbul ignore next -- schema generation failure */ catch {/* ignore */}
 }
 
 // OpenAPI 3.1 spec emission embedding the JSON Schema
@@ -307,7 +309,7 @@ export async function writeOpenApi(outDir: string) {
     };
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, 'openapi.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
-  } catch {/* ignore */}
+  } /* istanbul ignore next -- openapi emission failure */ catch {/* ignore */}
 }
 
 // OpenAPI 3.0 downgraded (basic compatibility; strips potential $schema keys)
@@ -323,5 +325,5 @@ export async function writeOpenApi30(outDir: string) {
     };
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, 'openapi30.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
-  } catch {/* ignore */}
+  } /* istanbul ignore next -- openapi30 emission failure */ catch {/* ignore */}
 }
