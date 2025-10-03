@@ -1,0 +1,59 @@
+{
+  "name": "testplaywrightslyp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/receipt.js",
+  "types": "dist/receipt.d.ts",
+  "bin": {
+    "receipt-scraper": "dist/scrape-slyp-receipt.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/receipt.js",
+      "types": "./dist/receipt.d.ts"
+    },
+    "./receipt": {
+      "import": "./dist/receipt.js",
+      "types": "./dist/receipt.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/scrape-slyp-receipt.js",
+    "dev": "ts-node scrape-slyp-receipt.ts",
+    "validate:strict": "npm run build && node dist/scrape-slyp-receipt.js --strict",
+    "validate": "npm run validate:strict",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "check:schema-version": "node scripts/check-schema-version.js",
+    "release": "semantic-release"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "dependencies": {
+    "playwright": "^1.55.1",
+  "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "zod-to-json-schema": "^3.24.6",
+    "vitest": "^2.0.5",
+  "@vitest/coverage-v8": "^2.0.5",
+    "semantic-release": "^23.0.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^9.0.6",
+    "@semantic-release/npm": "^11.0.3"
+  }
+}
