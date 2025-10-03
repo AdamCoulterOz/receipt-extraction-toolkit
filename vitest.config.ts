@@ -8,7 +8,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: ['receipt.ts'],
-      thresholds: { lines: 85, functions: 85, branches: 69, statements: 85 }
+  thresholds: { lines: 85, functions: 85, branches: 75, statements: 85 }
     },
   },
 });

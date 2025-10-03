@@ -177,4 +177,106 @@ describe('branch coverage expansions', () => {
     const r = transformReceipt(api);
     expect(r.totals.subtotal).toBeUndefined();
   });
+
+  it('handles short phone/abn (no masking change branch)', () => {
+    const api: any = buildApi({ merchant_detail: { phone_number: '1234', abn: '1234' } });
+    const r = transformReceipt(api);
+    const beforePhone = r.merchant.phone;
+    const beforeAbn = r.merchant.abn;
+    redactReceipt(r);
+    expect(r.merchant.phone).toBe(beforePhone); // unchanged
+    expect(r.merchant.abn).toBe(beforeAbn); // unchanged
+  });
+
+  it('missing tax_details but taxTotal present (branch)', () => {
+    const api: any = buildApi();
+    delete api.tax_details; // keep total_tax
+    const r = transformReceipt(api);
+    expect(r.totals.taxTotal).toBeDefined();
+    expect(r.totals.taxes.length).toBe(0);
+  });
+
+  it('writeJsonSchema graceful failure path (invalid outDir file path)', async () => {
+    // Create a file and then attempt to use it as a directory to trigger catch (best-effort)
+    const tmpBase = path.join(os.tmpdir(), 'receipt-file-as-dir');
+    await fs.writeFile(tmpBase, 'not a dir');
+    // Should not throw
+    await writeJsonSchema(tmpBase + '/sub').catch(()=>{});
+  });
+
+  it('computeReceiptId fallback on error path', () => {
+    const badApi: any = { get external_id() { throw new Error('boom'); }, total_price: 10, issued_at: 1 };
+    const id = computeReceiptId(badApi, { rawHash: 'abc' });
+    expect(id).toMatch(/^[a-f0-9-]{36}$/); // uuid fallback
+  });
+});
+
+describe('additional branch stress', () => {
+  it('discount branch: present numeric vs absent vs non-numeric', () => {
+    const withDiscount = buildApi({ total_discount: 2.5 });
+    const r1 = transformReceipt(withDiscount);
+    expect(r1.totals.discountTotal).toBe(2.5);
+    const noDiscount = buildApi({});
+    delete (noDiscount as any).total_discount;
+    const r2 = transformReceipt(noDiscount);
+    expect(r2.totals.discountTotal).toBeNull();
+    const badDiscount = buildApi({ total_discount: 'N/A' });
+    const r3 = transformReceipt(badDiscount);
+    expect(r3.totals.discountTotal).toBeNull();
+  });
+
+  it('payment branches: undefined method & no masked digits', () => {
+    const api: any = buildApi({ payments: [ { name: 'UNKNOWNPAY', amount: 1.23 } ], total_price: 1.23, total_tax: 0.11, tax_details: [{ title:'GST', amount:{ price:0.11, tax_type:'GST'}}] });
+    const r = transformReceipt(api);
+    expect(r.payments[0].method).toBe('UNKNOWNPAY'); // fallback uppercase path
+    expect(r.payments[0].maskedCard).toBeUndefined();
+  });
+
+  it('loyalty filtering drops empty entries', () => {
+    const api: any = buildApi({ loyalty: [ { title: '', description: '' }, { title: 'VIP', description: '' } ] });
+    const r = transformReceipt(api);
+    expect(r.loyaltyPrograms?.length).toBe(1);
+  });
+
+  it('integrity mismatch for sum(lineTotals) triggers issue', () => {
+    const api = buildApi();
+    const r = transformReceipt(api);
+    // Tamper totals.total
+    r.totals.total += 5;
+    // Also tamper an item lineTotal to keep aggregated sums original vs modified
+    r.items[0].lineTotal += 1;
+    const v = validateReceipt(r);
+    expect(v.issues.some(i => i.includes('sum(lineTotals)'))).toBe(true);
+  });
+
+  it('totalPaid mismatch triggers issue', () => {
+    const api = buildApi();
+    api.payments = [ { name: 'VISA (**** 1234)', amount: 0.5, payment_method_type: 'VISA' } ];
+    api.total_price = 5;
+    api.total_tax = 0.45;
+    api.tax_details = [{ title: 'GST', amount: { price: 0.45, tax_type: 'GST' } }];
+    const r = transformReceipt(api);
+    const v = validateReceipt(r);
+    expect(v.issues.some(i => i.includes('totalPaid'))).toBe(true);
+  });
+
+  it('handles payment with empty method -> undefined fallback', () => {
+    const api: any = buildApi({ payments: [ { name: '', amount: 1.00 } ], total_price: 1, total_tax: 0.09, tax_details: [{ title:'GST', amount:{ price:0.09, tax_type:'GST'}}] });
+    const r = transformReceipt(api);
+    expect(r.payments[0].method).toBeUndefined();
+  });
+
+  it('missing basket_items yields zero items and aggregatedItems', () => {
+    const api: any = buildApi();
+    delete api.basket_items;
+    const r = transformReceipt(api);
+    expect(r.items.length).toBe(0);
+    expect(r.aggregatedItems.length).toBe(0);
+  });
+
+  it('negative quantity coerces to 1', () => {
+    const api: any = buildApi({ basket_items: [ { product: { name: 'Neg', pricing: { price: 3, currency_code: 'AUD' }, quantity_purchased: -5, item_properties: [{ title: 'SKU: N-1' }, { bogus: 'ignore' }] } } ] });
+    const r = transformReceipt(api);
+    expect(r.items[0].quantity).toBe(1);
+  });
 });
