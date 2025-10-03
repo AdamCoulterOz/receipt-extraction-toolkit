@@ -1,6 +1,6 @@
 {
   "name": "testplaywrightslyp",
-  "version": "1.0.0",
+  "version": "0.0.0-development",
   "description": "",
   "main": "dist/receipt.js",
   "types": "dist/receipt.d.ts",
