@@ -1,0 +1,43 @@
+{
+  "external_id": "R-TEST-123",
+  "receipt_type": "smart",
+  "is_tax_invoice": true,
+  "issued_at": 1700000000,
+  "issued_at_iso": "2023-11-14T10:13:20.000Z",
+  "merchant_detail": {
+    "timezone": "Australia/Sydney",
+    "abn": "12 345 678 901",
+    "phone_number": "0299991111",
+    "address": {
+      "street": "1 Example St",
+      "suburb": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country_code": "AU"
+    }
+  },
+  "root_merchant": { "trading_name": "Demo Merchant" },
+  "store": { "name": "Demo Store" },
+  "currency_code": "AUD",
+  "basket_items": [
+    {
+      "product": {
+        "name": "Widget Alpha",
+        "pricing": { "price": 10.05, "currency_code": "AUD" },
+        "quantity_purchased": 2,
+        "item_properties": [ { "title": "SKU: W-A-01" } ]
+      }
+    },
+    {
+      "product": {
+        "name": "Widget Beta",
+        "pricing": { "price": 10.05, "currency_code": "AUD" },
+        "quantity_purchased": 1
+      }
+    }
+  ],
+  "payments": [ { "name": "VISA (**** 1234)", "amount": 30.15, "payment_method_type": "VISA" } ],
+  "total_price": 30.15,
+  "total_tax": 2.74,
+  "tax_details": [ { "title": "GST", "amount": { "price": 2.74, "tax_type": "GST" } } ]
+}

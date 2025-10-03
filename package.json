@@ -7,7 +7,10 @@
     "build": "tsc",
     "start": "node dist/scrape-slyp-receipt.js",
     "dev": "ts-node scrape-slyp-receipt.ts",
-    "validate": "npm run build && node dist/scrape-slyp-receipt.js"
+    "validate": "npm run build && node dist/scrape-slyp-receipt.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +24,7 @@
     "@types/node": "^24.6.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "zod-to-json-schema": "^3.24.6"
+    "zod-to-json-schema": "^3.24.6",
+    "vitest": "^2.0.5"
   }
 }
