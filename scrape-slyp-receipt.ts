@@ -8,7 +8,7 @@ import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, TRA
 import { randomUUID } from 'node:crypto';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string; version?: boolean; navRetries?: number; navBackoffMs?: number };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string; version?: boolean; navRetries?: number; navBackoffMs?: number; fetchRetries?: number; fetchBackoffMs?: number };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -35,6 +35,10 @@ function parseCli(argv: string[]): Cli {
     else if (a?.startsWith('--nav-retries=')) { const v = Number(a.slice(13)); if (Number.isFinite(v) && v > 0) out.navRetries = v; }
     else if (a === '--nav-backoff-ms') { const v = Number(argv[++i]); if (Number.isFinite(v) && v >= 0) out.navBackoffMs = v; }
     else if (a?.startsWith('--nav-backoff-ms=')) { const v = Number(a.slice(17)); if (Number.isFinite(v) && v >= 0) out.navBackoffMs = v; }
+    else if (a === '--fetch-retries') { const v = Number(argv[++i]); if (Number.isFinite(v) && v > 0) out.fetchRetries = v; }
+    else if (a?.startsWith('--fetch-retries=')) { const v = Number(a.slice(16)); if (Number.isFinite(v) && v > 0) out.fetchRetries = v; }
+    else if (a === '--fetch-backoff-ms') { const v = Number(argv[++i]); if (Number.isFinite(v) && v >= 0) out.fetchBackoffMs = v; }
+    else if (a?.startsWith('--fetch-backoff-ms=')) { const v = Number(a.slice(19)); if (Number.isFinite(v) && v >= 0) out.fetchBackoffMs = v; }
   }
   return out;
 }
@@ -88,49 +92,73 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 500): 
 // Single receipt processor
 async function processSingle(url: string, index: number | undefined, shared: { browser: pw.Browser; runId: string }) {
   const start = Date.now();
-  const context = await shared.browser.newContext({ viewport: { width: 1200, height: 1600 }, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36' });
-  const page = await context.newPage();
-  log('info', 'navigate.start', { url });
-  const navRetries = cli.navRetries ?? 2;
-  const baseBackoff = cli.navBackoffMs ?? 500;
-  let resp: pw.Response | undefined;
-  for (let attempt = 0; attempt < navRetries; attempt++) {
-    try {
-      resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-      if (resp && resp.ok()) break;
-      log('warn', 'navigate.attempt', { url, attempt: attempt+1, status: resp?.status() });
-    } catch (e) {
-      log('warn', 'navigate.error', { url, attempt: attempt+1, error: String(e) });
+  const fetchRetries = cli.fetchRetries ?? 2;
+  const fetchBase = cli.fetchBackoffMs ?? 800; // slower base than nav
+  let apiReceiptData: any | undefined;
+  let fallbackUsedGlobal = false;
+  let lastError: string | undefined;
+
+  for (let fAttempt = 0; fAttempt < fetchRetries && !apiReceiptData; fAttempt++) {
+    const context = await shared.browser.newContext({ viewport: { width: 1200, height: 1600 }, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36' });
+    const page = await context.newPage();
+    log('info', 'navigate.start', { url, fetchAttempt: fAttempt+1 });
+    const navRetries = cli.navRetries ?? 2;
+    const baseBackoff = cli.navBackoffMs ?? 500;
+    let resp: pw.Response | undefined;
+    for (let attempt = 0; attempt < navRetries; attempt++) {
+      try {
+        resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        if (resp && resp.ok()) break;
+        log('warn', 'navigate.attempt', { url, attempt: attempt+1, status: resp?.status(), fetchAttempt: fAttempt+1 });
+      } catch (e) {
+        log('warn', 'navigate.error', { url, attempt: attempt+1, error: String(e), fetchAttempt: fAttempt+1 });
+      }
+      if (attempt < navRetries - 1) {
+        const delay = baseBackoff * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
-    if (attempt < navRetries - 1) {
-      const delay = baseBackoff * Math.pow(2, attempt);
-      await new Promise(r => setTimeout(r, delay));
+    if (!resp || !resp.ok()) log('warn', 'navigation.status', { status: resp?.status(), statusText: resp?.statusText(), fetchAttempt: fAttempt+1 });
+
+    // Heuristic receipt detector
+    const isReceiptish = (j: any) => j && typeof j === 'object' && ('total_price' in j || 'basket_items' in j || 'merchant_detail' in j);
+    let capturedReceiptJson: any | undefined;
+    let fallbackUsed = false;
+    const apiResponse = await page.waitForResponse(async r => {
+      if (!r.ok()) return false; const ct = r.headers()['content-type'] ?? ''; if (!ct.includes('application/json')) return false; try { const j = await r.json(); if (isReceiptish(j)) { capturedReceiptJson = j; return true; } } catch { } return false;
+    }, { timeout: 15_000 }).catch(() => undefined);
+    if (!apiResponse) {
+      const fallback = await page.waitForResponse(r => r.ok() && (r.headers()['content-type'] || '').includes('application/json'), { timeout: 10_000 }).catch(() => undefined);
+      if (fallback) { try { apiReceiptData = await fallback.json(); fallbackUsed = true; } catch (e) { lastError = String(e); } }
+    } else { apiReceiptData = capturedReceiptJson; }
+    if (fallbackUsed) fallbackUsedGlobal = true;
+    await context.close();
+    if (!apiReceiptData) {
+      lastError = 'no_api_response';
+      if (fAttempt < fetchRetries - 1) {
+        const delay = fetchBase * Math.pow(2, fAttempt);
+        log('warn', 'fetch.retry', { url, nextDelayMs: delay, attempt: fAttempt+1 });
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
   }
-  if (!resp || !resp.ok()) log('warn', 'navigation.status', { status: resp?.status(), statusText: resp?.statusText() });
-  if (!resp || !resp.ok()) log('warn', 'navigation.status', { status: resp?.status(), statusText: resp?.statusText() });
+  if (!apiReceiptData) {
+    log('error', 'receipt.fetch.failed', { url, attempts: fetchRetries, lastError });
+    return { ok: false, url, reason: 'no_api_response', durationMs: Date.now()-start };
+  }
+  if (fallbackUsedGlobal) log('warn', 'receipt.heuristic.fallback', { url });
 
   const isReceiptish = (j: any) => j && typeof j === 'object' && ('total_price' in j || 'basket_items' in j || 'merchant_detail' in j);
-  let capturedReceiptJson: any | undefined; let fallbackUsed = false; let apiReceiptData: any;
-  const apiResponse = await page.waitForResponse(async r => {
-    if (!r.ok()) return false; const ct = r.headers()['content-type'] ?? ''; if (!ct.includes('application/json')) return false; try { const j = await r.json(); if (isReceiptish(j)) { capturedReceiptJson = j; return true; } } catch { /* ignore */ } return false;
-  }, { timeout: 15_000 }).catch(() => undefined);
-  if (!apiResponse) {
-    const fallback = await page.waitForResponse(r => r.ok() && (r.headers()['content-type'] || '').includes('application/json'), { timeout: 10_000 }).catch(() => undefined);
-    if (fallback) { try { apiReceiptData = await fallback.json(); fallbackUsed = true; } catch {/* ignore */} }
-  } else { apiReceiptData = capturedReceiptJson; }
-  if (!apiReceiptData) { log('error', 'receipt.fetch.failed', { url }); await context.close(); return { ok: false, url, reason: 'no_api_response', durationMs: Date.now()-start }; }
-  if (fallbackUsed) log('warn', 'receipt.heuristic.fallback', { url });
+  // (Old receipt capture logic replaced by multi-attempt block above)
 
   const rawFile = index != null ? `receipt.${index}.api.raw.json` : 'receipt.api.raw.json';
   await fs.writeFile(path.join(OUT_DIR, rawFile), JSON.stringify(apiReceiptData, null, 2), 'utf-8').catch(()=>{});
 
   const receipt = transformReceipt(apiReceiptData, { schemaVersion: SCHEMA_VERSION, runId: shared.runId });
-  try { redactReceipt(receipt, { enforce: cli.piiStrict }); } catch (e) { if (cli.piiStrict) { log('error', 'pii.strict.fail', { url, error: String(e) }); await context.close(); return { ok: false, url, reason: 'pii_violation', durationMs: Date.now()-start }; } }
+  try { redactReceipt(receipt, { enforce: cli.piiStrict }); } catch (e) { if (cli.piiStrict) { log('error', 'pii.strict.fail', { url, error: String(e) }); return { ok: false, url, reason: 'pii_violation', durationMs: Date.now()-start }; } }
   const validation = validateReceipt(receipt);
   if (cli.strict && (!validation.validationSuccess || validation.issues.length)) {
     log('error', 'strict.validation.fail', { url, issues: validation.issues });
-    await context.close();
     return { ok: false, url, reason: 'validation_failed', issues: validation.issues, durationMs: Date.now()-start };
   }
   // Persist outputs (index aware)
@@ -140,7 +168,6 @@ async function processSingle(url: string, index: number | undefined, shared: { b
   await fs.writeFile(path.join(OUT_DIR, valFile), JSON.stringify(validation, null, 2), 'utf-8');
   if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); await writeOpenApi30(OUT_DIR); }
   const durationMs = Date.now() - start;
-  await context.close();
   log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues.length });
   return { ok: true, url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues, receiptId: receipt.meta.receiptId };
 }
