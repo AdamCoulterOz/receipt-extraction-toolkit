@@ -309,3 +309,19 @@ export async function writeOpenApi(outDir: string) {
     await fs.writeFile(path.join(outDir, 'openapi.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
   } catch {/* ignore */}
 }
+
+// OpenAPI 3.0 downgraded (basic compatibility; strips potential $schema keys)
+export async function writeOpenApi30(outDir: string) {
+  try {
+    const schema = zodToJsonSchema(zReceipt, 'Receipt');
+    // Remove top-level $schema for 3.0 consumers
+    if ((schema as any).$schema) delete (schema as any).$schema;
+    const openapi = {
+      openapi: '3.0.3',
+      info: { title: 'Receipt Extraction API (3.0)', version: SCHEMA_VERSION },
+      components: { schemas: { Receipt: schema } }
+    };
+    await fs.mkdir(outDir, { recursive: true });
+    await fs.writeFile(path.join(outDir, 'openapi30.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
+  } catch {/* ignore */}
+}

@@ -1,0 +1,417 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`schema snapshot > Receipt JSON schema stable shape 1`] = `
+{
+  "$ref": "#/definitions/Receipt",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "Receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregatedItems": {
+          "items": {
+            "$ref": "#/definitions/Receipt/properties/items/items",
+          },
+          "type": "array",
+        },
+        "identities": {
+          "additionalProperties": false,
+          "properties": {
+            "externalReceiptId": {
+              "type": "string",
+            },
+            "isTaxInvoice": {
+              "type": "boolean",
+            },
+            "orderNumber": {
+              "type": "string",
+            },
+            "receiptType": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "apn": {
+                "type": "string",
+              },
+              "colour": {
+                "type": "string",
+              },
+              "currency": {
+                "type": "string",
+              },
+              "discount": {
+                "type": "number",
+              },
+              "lineTotal": {
+                "type": "number",
+              },
+              "lineTotalFormatted": {
+                "type": "string",
+              },
+              "name": {
+                "type": "string",
+              },
+              "quantity": {
+                "exclusiveMinimum": 0,
+                "type": "integer",
+              },
+              "size": {
+                "type": "string",
+              },
+              "sku": {
+                "type": "string",
+              },
+              "tax": {
+                "type": "number",
+              },
+              "unitPrice": {
+                "type": "number",
+              },
+              "unitPriceFormatted": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "name",
+              "unitPrice",
+              "unitPriceFormatted",
+              "quantity",
+              "lineTotal",
+              "lineTotalFormatted",
+              "currency",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "loyaltyPrograms": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "maskedId": {
+                "type": "string",
+              },
+              "program": {
+                "type": "string",
+              },
+            },
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "merchant": {
+          "additionalProperties": false,
+          "properties": {
+            "abn": {
+              "type": "string",
+            },
+            "address": {
+              "additionalProperties": false,
+              "properties": {
+                "countryCode": {
+                  "type": "string",
+                },
+                "full": {
+                  "type": "string",
+                },
+                "postcode": {
+                  "type": "string",
+                },
+                "state": {
+                  "type": "string",
+                },
+                "street": {
+                  "type": "string",
+                },
+                "street2": {
+                  "type": "string",
+                },
+                "suburb": {
+                  "type": "string",
+                },
+              },
+              "type": "object",
+            },
+            "merchantName": {
+              "type": "string",
+            },
+            "phone": {
+              "type": "string",
+            },
+            "storeName": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "fetchedAtISO": {
+              "type": "string",
+            },
+            "rawHash": {
+              "type": "string",
+            },
+            "receiptId": {
+              "type": "string",
+            },
+            "runId": {
+              "type": "string",
+            },
+            "schemaVersion": {
+              "type": "string",
+            },
+            "source": {
+              "const": "slyp",
+              "type": "string",
+            },
+            "transformVersion": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "schemaVersion",
+            "transformVersion",
+            "source",
+            "fetchedAtISO",
+            "runId",
+            "receiptId",
+          ],
+          "type": "object",
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "not": {},
+                },
+                {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+              ],
+            },
+            {
+              "type": "null",
+            },
+          ],
+        },
+        "paymentCardMeta": {
+          "additionalProperties": false,
+          "properties": {
+            "accountType": {
+              "type": "string",
+            },
+            "authCode": {
+              "type": "string",
+            },
+            "merchantId": {
+              "type": "string",
+            },
+            "rawText": {
+              "type": "string",
+            },
+            "rrn": {
+              "type": "string",
+            },
+            "stan": {
+              "type": "string",
+            },
+            "terminalId": {
+              "type": "string",
+            },
+            "transactionType": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "paymentSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "methods": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "totalPaid": {
+              "type": "number",
+            },
+            "totalPaidFormatted": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "totalPaid",
+            "totalPaidFormatted",
+            "methods",
+          ],
+          "type": "object",
+        },
+        "payments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "amount": {
+                "type": "number",
+              },
+              "amountFormatted": {
+                "type": "string",
+              },
+              "maskedCard": {
+                "type": "string",
+              },
+              "method": {
+                "type": "string",
+              },
+              "rawName": {
+                "type": "string",
+              },
+              "type": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "amount",
+              "amountFormatted",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "returnsPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "barcode": {
+              "type": "string",
+            },
+            "periodDays": {
+              "type": "number",
+            },
+            "policyText": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "timestamps": {
+          "additionalProperties": false,
+          "properties": {
+            "issuedAtEpoch": {
+              "type": "number",
+            },
+            "issuedAtISO": {
+              "type": "string",
+            },
+            "issuedDate": {
+              "type": "string",
+            },
+            "issuedTime": {
+              "type": "string",
+            },
+            "timezone": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+        "totals": {
+          "additionalProperties": false,
+          "properties": {
+            "computedItemQuantity": {
+              "minimum": 0,
+              "type": "integer",
+            },
+            "currency": {
+              "type": "string",
+            },
+            "discountTotal": {
+              "type": [
+                "number",
+                "null",
+              ],
+            },
+            "itemCount": {
+              "minimum": 0,
+              "type": "integer",
+            },
+            "subtotal": {
+              "type": "number",
+            },
+            "subtotalFormatted": {
+              "type": "string",
+            },
+            "taxTotal": {
+              "type": "number",
+            },
+            "taxTotalFormatted": {
+              "type": "string",
+            },
+            "taxes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "amount": {
+                    "type": "number",
+                  },
+                  "amountFormatted": {
+                    "type": "string",
+                  },
+                  "title": {
+                    "type": "string",
+                  },
+                  "type": {
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "amount",
+                  "amountFormatted",
+                ],
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "total": {
+              "type": "number",
+            },
+            "totalFormatted": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "currency",
+            "total",
+            "totalFormatted",
+            "taxes",
+          ],
+          "type": "object",
+        },
+      },
+      "required": [
+        "meta",
+        "identities",
+        "timestamps",
+        "merchant",
+        "totals",
+        "items",
+        "aggregatedItems",
+        "payments",
+        "paymentSummary",
+      ],
+      "type": "object",
+    },
+  },
+}
+`;

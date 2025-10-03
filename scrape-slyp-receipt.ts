@@ -4,11 +4,11 @@
 import * as pw from 'playwright';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt, writeOpenApi } from './receipt.js';
+import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt, writeOpenApi, writeOpenApi30 } from './receipt.js';
 import { randomUUID } from 'node:crypto';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string; version?: boolean };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string; version?: boolean; navRetries?: number; navBackoffMs?: number };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -31,6 +31,10 @@ function parseCli(argv: string[]): Cli {
     else if (a === '--run-id') { out.runId = argv[++i]; }
     else if (a?.startsWith('--run-id=')) { out.runId = a.slice(9); }
     else if (a === '--version') { out.version = true; }
+    else if (a === '--nav-retries') { const v = Number(argv[++i]); if (Number.isFinite(v) && v > 0) out.navRetries = v; }
+    else if (a?.startsWith('--nav-retries=')) { const v = Number(a.slice(13)); if (Number.isFinite(v) && v > 0) out.navRetries = v; }
+    else if (a === '--nav-backoff-ms') { const v = Number(argv[++i]); if (Number.isFinite(v) && v >= 0) out.navBackoffMs = v; }
+    else if (a?.startsWith('--nav-backoff-ms=')) { const v = Number(a.slice(17)); if (Number.isFinite(v) && v >= 0) out.navBackoffMs = v; }
   }
   return out;
 }
@@ -87,7 +91,23 @@ async function processSingle(url: string, index: number | undefined, shared: { b
   const context = await shared.browser.newContext({ viewport: { width: 1200, height: 1600 }, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36' });
   const page = await context.newPage();
   log('info', 'navigate.start', { url });
-  const resp = await retry(() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 }), 2).catch(e => { log('warn', 'navigate.failed', { url, error: String(e) }); return undefined; });
+  const navRetries = cli.navRetries ?? 2;
+  const baseBackoff = cli.navBackoffMs ?? 500;
+  let resp: pw.Response | undefined;
+  for (let attempt = 0; attempt < navRetries; attempt++) {
+    try {
+      resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      if (resp && resp.ok()) break;
+      log('warn', 'navigate.attempt', { url, attempt: attempt+1, status: resp?.status() });
+    } catch (e) {
+      log('warn', 'navigate.error', { url, attempt: attempt+1, error: String(e) });
+    }
+    if (attempt < navRetries - 1) {
+      const delay = baseBackoff * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  if (!resp || !resp.ok()) log('warn', 'navigation.status', { status: resp?.status(), statusText: resp?.statusText() });
   if (!resp || !resp.ok()) log('warn', 'navigation.status', { status: resp?.status(), statusText: resp?.statusText() });
 
   const isReceiptish = (j: any) => j && typeof j === 'object' && ('total_price' in j || 'basket_items' in j || 'merchant_detail' in j);
@@ -118,7 +138,7 @@ async function processSingle(url: string, index: number | undefined, shared: { b
   const valFile = index != null ? `receipt.${index}.validation.json` : 'receipt.validation.json';
   await fs.writeFile(path.join(OUT_DIR, cleanFile), JSON.stringify(receipt, null, 2), 'utf-8');
   await fs.writeFile(path.join(OUT_DIR, valFile), JSON.stringify(validation, null, 2), 'utf-8');
-  if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); }
+  if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); await writeOpenApi30(OUT_DIR); }
   const durationMs = Date.now() - start;
   await context.close();
   log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues.length });
@@ -158,6 +178,7 @@ async function main() {
     await browser.close();
   await writeJsonSchema(OUT_DIR); // write once
   await writeOpenApi(OUT_DIR);
+  await writeOpenApi30(OUT_DIR);
   const manifest = { ts: new Date().toISOString(), runId, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION, count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, avgDurationMs: Math.round(results.filter(r=>r.ok).reduce((a,r)=>a+(r.durationMs||0),0)/Math.max(1,results.filter(r=>r.ok).length)), results: results.map(r => ({ ...r, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION })) };
     await fs.writeFile(path.join(OUT_DIR, 'batch.manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     log('info', 'batch.done', { ok: manifest.ok, failed: manifest.failed });
@@ -177,3 +198,10 @@ async function main() {
 }
 
 await main();
+// Graceful shutdown signals (best-effort): ensure logs flush
+['SIGINT','SIGTERM'].forEach(sig => {
+  process.on(sig as NodeJS.Signals, () => {
+    console.error(JSON.stringify({ ts: new Date().toISOString(), level: 'error', msg: 'signal.exit', meta: { signal: sig } }));
+    process.exit(0);
+  });
+});
