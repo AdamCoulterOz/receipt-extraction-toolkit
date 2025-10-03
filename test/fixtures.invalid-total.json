@@ -1,0 +1,10 @@
+{
+  "external_id": "R-BAD-TOTAL-1",
+  "currency_code": "AUD",
+  "issued_at": 1700002000,
+  "basket_items": [ { "product": { "name": "Bad Item", "pricing": { "price": 5.00, "currency_code": "AUD" }, "quantity_purchased": 1 } } ],
+  "payments": [ { "name": "VISA (**** 9999)", "amount": 10.00, "payment_method_type": "VISA" } ],
+  "total_price": 7.00,
+  "total_tax": 0.45,
+  "tax_details": [ { "title": "GST", "amount": { "price": 0.45, "tax_type": "GST" } } ]
+}

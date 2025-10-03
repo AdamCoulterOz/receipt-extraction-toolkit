@@ -2,7 +2,21 @@
   "name": "testplaywrightslyp",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/receipt.js",
+  "types": "dist/receipt.d.ts",
+  "bin": {
+    "receipt-scraper": "dist/scrape-slyp-receipt.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/receipt.js",
+      "types": "./dist/receipt.d.ts"
+    },
+    "./receipt": {
+      "import": "./dist/receipt.js",
+      "types": "./dist/receipt.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/scrape-slyp-receipt.js",

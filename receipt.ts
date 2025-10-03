@@ -8,6 +8,7 @@ import path from 'node:path';
 // Schema / Version Meta
 // ----------------------
 export const SCHEMA_VERSION = '1.0.0';
+export const TRANSFORM_VERSION = '1.0.0';
 
 // ----------------------
 // Domain Types
@@ -32,7 +33,7 @@ export interface ReceiptTotals { currency: string; total: number; totalFormatted
 export interface ReceiptIdentities { externalReceiptId?: string; orderNumber?: string; receiptType?: string; isTaxInvoice?: boolean; }
 export interface ReceiptTimestamps { issuedAtEpoch?: number; issuedAtISO?: string; issuedDate?: string; issuedTime?: string; timezone?: string; }
 export interface MerchantInfo { merchantName?: string; storeName?: string; abn?: string; phone?: string; address?: StoreAddress; }
-export interface ReceiptMeta { schemaVersion: string; source: 'slyp'; fetchedAtISO: string; rawHash?: string; runId: string; receiptId: string; }
+export interface ReceiptMeta { schemaVersion: string; transformVersion: string; source: 'slyp'; fetchedAtISO: string; rawHash?: string; runId: string; receiptId: string; }
 export interface Receipt {
   meta: ReceiptMeta;
   identities: ReceiptIdentities;
@@ -95,7 +96,7 @@ const zPaymentCardMeta = z.object({ merchantId: z.string().optional(), terminalI
 const zReturnsPolicy = z.object({ barcode: z.string().optional(), periodDays: z.number().optional(), policyText: z.string().optional() });
 const zLoyalty = z.object({ program: z.string().optional(), maskedId: z.string().optional() });
 const zAggregatedItem = zReceiptItem; // identical currently
-const zMeta = z.object({ schemaVersion: z.string(), source: z.literal('slyp'), fetchedAtISO: z.string(), rawHash: z.string().optional(), runId: z.string(), receiptId: z.string() });
+const zMeta = z.object({ schemaVersion: z.string(), transformVersion: z.string(), source: z.literal('slyp'), fetchedAtISO: z.string(), rawHash: z.string().optional(), runId: z.string(), receiptId: z.string() });
 export const zReceipt = z.object({
   meta: zMeta,
   identities: zIdentities,
@@ -201,7 +202,7 @@ export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: s
   const runId = opts?.runId || randomUUID();
   const receiptId = computeReceiptId(apiReceiptData, { rawHash });
   const cleanReceipt: Receipt = {
-    meta: { schemaVersion: opts?.schemaVersion || SCHEMA_VERSION, source: 'slyp', fetchedAtISO: new Date().toISOString(), rawHash, runId, receiptId },
+    meta: { schemaVersion: opts?.schemaVersion || SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION, source: 'slyp', fetchedAtISO: new Date().toISOString(), rawHash, runId, receiptId },
     identities: { externalReceiptId: apiReceiptData?.external_id, orderNumber: apiReceiptData?.order_number_detail?.value || apiReceiptData?.order_number_detail?.order_number, receiptType: apiReceiptData?.receipt_type, isTaxInvoice: !!apiReceiptData?.is_tax_invoice },
     timestamps: { issuedAtEpoch, issuedAtISO, issuedDate, issuedTime, timezone: apiReceiptData?.merchant_detail?.timezone || apiReceiptData?.issued_at_timezone },
     merchant: { merchantName: apiReceiptData?.root_merchant?.trading_name || apiReceiptData?.issuing_merchant?.trading_name, storeName: apiReceiptData?.store?.name || apiReceiptData?.merchant_detail?.name, abn: apiReceiptData?.merchant_detail?.abn, phone: apiReceiptData?.merchant_detail?.phone_number, address },

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { transformReceipt, validateReceipt, SCHEMA_VERSION, redactReceipt, computeReceiptId } from '../receipt.js';
+import { transformReceipt, validateReceipt, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt, computeReceiptId } from '../receipt.js';
 
 function loadFixture(name: string) {
   const p = path.resolve(__dirname, name);
@@ -11,10 +11,21 @@ function loadFixture(name: string) {
 describe('transformReceipt', () => {
   const api = loadFixture('fixtures.sample-receipt.json');
   const receipt = transformReceipt(api);
-  it('adds meta with schemaVersion and hash', () => {
+  it('adds meta with schemaVersion, transformVersion and hash', () => {
     expect(receipt.meta.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(receipt.meta.transformVersion).toBe(TRANSFORM_VERSION);
     expect(receipt.meta.rawHash).toMatch(/^[a-f0-9]{64}$/);
   });
+describe('invalid total detection', () => {
+  const api = loadFixture('fixtures.invalid-total.json');
+  const receipt = transformReceipt(api);
+  const validation = validateReceipt(receipt);
+  it('flags integrity issue when paid != total', () => {
+    expect(validation.validationSuccess).toBe(true); // shape still valid
+    const hasMismatch = validation.issues.some(i => i.includes('totalPaid'));
+    expect(hasMismatch).toBe(true);
+  });
+});
   it('computes totals and item aggregation correctly', () => {
     expect(receipt.items.length).toBe(2);
     expect(receipt.totals.total).toBeCloseTo(30.15, 2);
