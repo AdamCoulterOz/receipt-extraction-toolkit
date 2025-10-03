@@ -4,11 +4,11 @@
 import * as pw from 'playwright';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, redactReceipt, writeOpenApi } from './receipt.js';
+import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt, writeOpenApi } from './receipt.js';
 import { randomUUID } from 'node:crypto';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string; version?: boolean };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -30,6 +30,7 @@ function parseCli(argv: string[]): Cli {
     else if (a?.startsWith('--rate-ms=')) { const v = Number(a.slice(10)); if (Number.isFinite(v) && v >= 0) out.rateMs = v; }
     else if (a === '--run-id') { out.runId = argv[++i]; }
     else if (a?.startsWith('--run-id=')) { out.runId = a.slice(9); }
+    else if (a === '--version') { out.version = true; }
   }
   return out;
 }
@@ -56,8 +57,11 @@ function log(level: LogLevel, message: string, meta?: Record<string, any>) {
   if (meta) rec.meta = meta;
   const line = JSON.stringify(rec);
   if (!cli.logFile) {
-    // eslint-disable-next-line no-console
-    console.log(line);
+    if (level === 'error') {
+      console.error(line);
+    } else {
+      console.log(line);
+    }
   } else {
     if (!logStream) initLogStream();
     logStream!.write(line + '\n');
@@ -123,6 +127,10 @@ async function processSingle(url: string, index: number | undefined, shared: { b
 
 async function main() {
   const runId = cli.runId || randomUUID();
+  if (cli.version) {
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION }));
+    process.exit(0);
+  }
   if (cli.batchFile) {
     const listRaw = await fs.readFile(path.resolve(cli.batchFile), 'utf-8').catch(()=>undefined);
     if (!listRaw) { console.error('[fatal] Cannot read batch file'); process.exit(1); }
@@ -150,7 +158,7 @@ async function main() {
     await browser.close();
   await writeJsonSchema(OUT_DIR); // write once
   await writeOpenApi(OUT_DIR);
-    const manifest = { ts: new Date().toISOString(), runId, count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, avgDurationMs: Math.round(results.filter(r=>r.ok).reduce((a,r)=>a+(r.durationMs||0),0)/Math.max(1,results.filter(r=>r.ok).length)), results };
+  const manifest = { ts: new Date().toISOString(), runId, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION, count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, avgDurationMs: Math.round(results.filter(r=>r.ok).reduce((a,r)=>a+(r.durationMs||0),0)/Math.max(1,results.filter(r=>r.ok).length)), results: results.map(r => ({ ...r, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION })) };
     await fs.writeFile(path.join(OUT_DIR, 'batch.manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     log('info', 'batch.done', { ok: manifest.ok, failed: manifest.failed });
     if (cli.strict && manifest.failed) process.exit(2);

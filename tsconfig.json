@@ -6,6 +6,8 @@
     "esModuleInterop": true,
     "types": ["node"],
     "skipLibCheck": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true
   }
 }

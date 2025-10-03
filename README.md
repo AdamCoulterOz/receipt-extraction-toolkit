@@ -79,6 +79,85 @@ receipt-scraper --url <receiptUrl>
 - `--quiet` Suppress info logs
 - `--log <file>` NDJSON log file path
 - `--concurrency <N>` Parallel workers in batch mode
+- `--rate-ms <ms>` Minimum delay between starting receipts (throttling)
+- `--run-id <id>` Supply a custom run identifier (else generated)
+- `--version` Print JSON with schemaVersion & transformVersion
+
+### Validation & CI
+Use the strict validation script (schema + integrity + PII strict if flag is present):
+```
+npm run validate:strict
+```
+Non-zero exit codes:
+| Code | Meaning | Retry? |
+|------|---------|--------|
+| 0 | Success | n/a |
+| 1 | Config/init error (missing batch file etc.) | Fix config |
+| 2 | Validation / integrity / PII strict failure | Usually no (data issue) |
+| 3 | Network / acquisition failure (no API JSON) | Yes (transient) |
+| 4 | Unexpected internal error | Investigate |
+
+### Imports Guidance
+Stable public API import forms:
+```ts
+import { transformReceipt, validateReceipt } from 'testplaywrightslyp/receipt';
+```
+Avoid deep internal paths; only the export map is forward compatible.
+
+### Batch Manifest Schema
+`batch.manifest.json` example:
+```json
+{
+  "ts": "2025-10-03T12:00:00.000Z",
+  "runId": "<uuid>",
+  "schemaVersion": "1.0.0",
+  "transformVersion": "1.0.0",
+  "count": 10,
+  "ok": 10,
+  "failed": 0,
+  "avgDurationMs": 540,
+  "results": [
+    {
+      "ok": true,
+      "url": "https://receipts.slyp.com.au/...",
+      "total": 30.15,
+      "items": 3,
+      "durationMs": 512,
+      "issues": [],
+      "receiptId": "<sha256>",
+      "schemaVersion": "1.0.0",
+      "transformVersion": "1.0.0"
+    }
+  ]
+}
+```
+Downstream systems can dedupe via `receiptId` and validate version drift early.
+
+### OpenAPI Compatibility Notes
+The generated `openapi.receipt.json` targets OpenAPI 3.1.0 (full 2020-12 JSON Schema dialect). Consumers limited to 3.0.x may need a downgraded variant (future enhancement) since 3.0.x does not fully support all JSON Schema keywords.
+
+### PII Redaction & Strict Mode
+Redaction applies to:
+- `merchant.phone` → masked to `***####` (last 4 digits)
+- `merchant.abn` → masked to `***####`
+- `payments[].maskedCard` → ensures only last 4 digits remain
+
+Not redacted (intentional):
+- `merchant.address.full` (location context retained)
+- Item names, storeName, merchantName
+- Loyalty program names / masked IDs (already masked by provider)
+
+Strict scan (`--pii-strict`) fails if any remaining sequence of ≥7 digits is detected in redacted fields.
+
+### Rate Limiting & Responsible Use
+`--rate-ms` enforces a minimum spacing between receipt starts across workers (still approximate under concurrency). Recommended values: 250–500 ms for moderate loads. Respect platform terms; consider exponential backoff for repeated 429/5xx responses (future enhancement).
+
+### Version Flag
+`--version` prints:
+```json
+{ "schemaVersion": "1.0.0", "transformVersion": "1.0.0" }
+```
+Useful for health checks / deployment introspection.
 
 ## Programmatic Usage
 ```ts

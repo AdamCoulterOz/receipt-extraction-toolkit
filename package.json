@@ -21,7 +21,8 @@
     "build": "tsc",
     "start": "node dist/scrape-slyp-receipt.js",
     "dev": "ts-node scrape-slyp-receipt.ts",
-    "validate": "npm run build && node dist/scrape-slyp-receipt.js",
+    "validate:strict": "npm run build && node dist/scrape-slyp-receipt.js --strict",
+    "validate": "npm run validate:strict",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage"
@@ -30,6 +31,12 @@
   "author": "",
   "license": "ISC",
   "type": "module",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "dependencies": {
     "playwright": "^1.55.1",
   "zod": "^3.24.1"
