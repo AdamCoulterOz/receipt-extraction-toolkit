@@ -1,0 +1,24 @@
+{
+  "name": "testplaywrightslyp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/scrape-slyp-receipt.js",
+    "dev": "ts-node scrape-slyp-receipt.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "node": "^24.9.0",
+    "playwright": "^1.55.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
