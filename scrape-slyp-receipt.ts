@@ -5,9 +5,10 @@ import * as pw from 'playwright';
 import fs from 'fs/promises';
 import path from 'node:path';
 import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, redactReceipt, writeOpenApi } from './receipt.js';
+import { randomUUID } from 'node:crypto';
 
 // ---- tiny CLI (no deps) ----
-type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean };
+type Cli = { url?: string; outDir?: string; strict?: boolean; batchFile?: string; quiet?: boolean; concurrency?: number; logFile?: string; piiStrict?: boolean; rateMs?: number; runId?: string };
 function parseCli(argv: string[]): Cli {
   const out: Cli = {};
   for (let i = 0; i < argv.length; i++) {
@@ -25,6 +26,10 @@ function parseCli(argv: string[]): Cli {
     else if (a === '--log') out.logFile = argv[++i];
     else if (a?.startsWith('--log=')) out.logFile = a.slice(6);
     else if (a === '--pii-strict') out.piiStrict = true;
+    else if (a === '--rate-ms') { const v = Number(argv[++i]); if (Number.isFinite(v) && v >= 0) out.rateMs = v; }
+    else if (a?.startsWith('--rate-ms=')) { const v = Number(a.slice(10)); if (Number.isFinite(v) && v >= 0) out.rateMs = v; }
+    else if (a === '--run-id') { out.runId = argv[++i]; }
+    else if (a?.startsWith('--run-id=')) { out.runId = a.slice(9); }
   }
   return out;
 }
@@ -73,9 +78,9 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 500): 
 }
 
 // Single receipt processor
-async function processSingle(url: string, index?: number) {
-  const browser = await pw.chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1200, height: 1600 }, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36' });
+async function processSingle(url: string, index: number | undefined, shared: { browser: pw.Browser; runId: string }) {
+  const start = Date.now();
+  const context = await shared.browser.newContext({ viewport: { width: 1200, height: 1600 }, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119 Safari/537.36' });
   const page = await context.newPage();
   log('info', 'navigate.start', { url });
   const resp = await retry(() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 }), 2).catch(e => { log('warn', 'navigate.failed', { url, error: String(e) }); return undefined; });
@@ -90,19 +95,19 @@ async function processSingle(url: string, index?: number) {
     const fallback = await page.waitForResponse(r => r.ok() && (r.headers()['content-type'] || '').includes('application/json'), { timeout: 10_000 }).catch(() => undefined);
     if (fallback) { try { apiReceiptData = await fallback.json(); fallbackUsed = true; } catch {/* ignore */} }
   } else { apiReceiptData = capturedReceiptJson; }
-  if (!apiReceiptData) { log('error', 'receipt.fetch.failed', { url }); await browser.close(); return { ok: false, url, reason: 'no_api_response' }; }
+  if (!apiReceiptData) { log('error', 'receipt.fetch.failed', { url }); await context.close(); return { ok: false, url, reason: 'no_api_response', durationMs: Date.now()-start }; }
   if (fallbackUsed) log('warn', 'receipt.heuristic.fallback', { url });
 
   const rawFile = index != null ? `receipt.${index}.api.raw.json` : 'receipt.api.raw.json';
   await fs.writeFile(path.join(OUT_DIR, rawFile), JSON.stringify(apiReceiptData, null, 2), 'utf-8').catch(()=>{});
 
-  const receipt = transformReceipt(apiReceiptData, { schemaVersion: SCHEMA_VERSION });
-  try { redactReceipt(receipt, { enforce: cli.piiStrict }); } catch (e) { if (cli.piiStrict) { log('error', 'pii.strict.fail', { url, error: String(e) }); await browser.close(); return { ok: false, url, reason: 'pii_violation' }; } }
+  const receipt = transformReceipt(apiReceiptData, { schemaVersion: SCHEMA_VERSION, runId: shared.runId });
+  try { redactReceipt(receipt, { enforce: cli.piiStrict }); } catch (e) { if (cli.piiStrict) { log('error', 'pii.strict.fail', { url, error: String(e) }); await context.close(); return { ok: false, url, reason: 'pii_violation', durationMs: Date.now()-start }; } }
   const validation = validateReceipt(receipt);
   if (cli.strict && (!validation.validationSuccess || validation.issues.length)) {
     log('error', 'strict.validation.fail', { url, issues: validation.issues });
-    await browser.close();
-    return { ok: false, url, reason: 'validation_failed', issues: validation.issues };
+    await context.close();
+    return { ok: false, url, reason: 'validation_failed', issues: validation.issues, durationMs: Date.now()-start };
   }
   // Persist outputs (index aware)
   const cleanFile = index != null ? `receipt.${index}.clean.json` : 'receipt.clean.json';
@@ -110,12 +115,14 @@ async function processSingle(url: string, index?: number) {
   await fs.writeFile(path.join(OUT_DIR, cleanFile), JSON.stringify(receipt, null, 2), 'utf-8');
   await fs.writeFile(path.join(OUT_DIR, valFile), JSON.stringify(validation, null, 2), 'utf-8');
   if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); }
-  await browser.close();
-  log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length });
-  return { ok: true, url, total: receipt.totals.total, items: receipt.items.length };
+  const durationMs = Date.now() - start;
+  await context.close();
+  log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues.length });
+  return { ok: true, url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues, receiptId: receipt.meta.receiptId };
 }
 
 async function main() {
+  const runId = cli.runId || randomUUID();
   if (cli.batchFile) {
     const listRaw = await fs.readFile(path.resolve(cli.batchFile), 'utf-8').catch(()=>undefined);
     if (!listRaw) { console.error('[fatal] Cannot read batch file'); process.exit(1); }
@@ -124,33 +131,26 @@ async function main() {
     const concurrency = cli.concurrency && cli.concurrency > 0 ? cli.concurrency : 1;
     log('info', 'batch.start', { count: urls.length, concurrency });
     const results: any[] = [];
+    const browser = await pw.chromium.launch({ headless: true });
+    let lastStart = 0;
+    const rateMs = cli.rateMs && cli.rateMs > 0 ? cli.rateMs : 0;
+    async function scheduleStart() {
+      if (!rateMs) return; const now = Date.now(); const wait = lastStart + rateMs - now; if (wait > 0) await new Promise(r=>setTimeout(r, wait)); lastStart = Date.now();
+    }
     if (concurrency === 1) {
-      for (let i=0;i<urls.length;i++) {
-        const u = urls[i];
-        const r = await processSingle(u, i+1);
-        results.push(r);
-      }
+      for (let i=0;i<urls.length;i++) { await scheduleStart(); const u = urls[i]; const r = await processSingle(u, i+1, { browser, runId }); results.push(r); }
     } else {
-      // simple work queue
       let idx = 0; let processed = 0;
       async function worker(workerId: number) {
-        while (true) {
-          const my = idx++;
-            if (my >= urls.length) break;
-          const u = urls[my];
-          log('debug', 'worker.start', { workerId, index: my+1 });
-          const r = await processSingle(u, my+1);
-          results[my] = r;
-          processed++;
-          log('debug', 'worker.done', { workerId, index: my+1, processed });
-        }
+        while (true) { const my = idx++; if (my >= urls.length) break; await scheduleStart(); const u = urls[my]; log('debug', 'worker.start', { workerId, index: my+1 }); const r = await processSingle(u, my+1, { browser, runId }); results[my] = r; processed++; log('debug', 'worker.done', { workerId, index: my+1, processed }); }
       }
       const workers = Array.from({ length: Math.min(concurrency, urls.length) }, (_, i)=> worker(i+1));
       await Promise.all(workers);
     }
+    await browser.close();
   await writeJsonSchema(OUT_DIR); // write once
   await writeOpenApi(OUT_DIR);
-    const manifest = { ts: new Date().toISOString(), count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, results };
+    const manifest = { ts: new Date().toISOString(), runId, count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, avgDurationMs: Math.round(results.filter(r=>r.ok).reduce((a,r)=>a+(r.durationMs||0),0)/Math.max(1,results.filter(r=>r.ok).length)), results };
     await fs.writeFile(path.join(OUT_DIR, 'batch.manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     log('info', 'batch.done', { ok: manifest.ok, failed: manifest.failed });
     if (cli.strict && manifest.failed) process.exit(2);
@@ -158,7 +158,9 @@ async function main() {
   }
   // single mode
   const RECEIPT_URL = cli.url || process.env.SLYP_URL || DEFAULT_URL;
-  await processSingle(RECEIPT_URL);
+  const browser = await pw.chromium.launch({ headless: true });
+  await processSingle(RECEIPT_URL, undefined, { browser, runId });
+  await browser.close();
   console.log('Saved:');
   console.log(' - out/receipt.api.raw.json');
   console.log(' - out/receipt.clean.json');
