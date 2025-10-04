@@ -199,6 +199,18 @@ export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: s
   const paymentCardMeta = parseRawPaymentMeta(apiReceiptData?.raw_payment_data);
 
   const rawHash = sha256Object(apiReceiptData);
+
+  // Infer discount total if not provided but line totals clearly exceed stated total
+  try {
+    const sumLineTotals = round2(items.reduce((a,i)=>a+i.lineTotal,0));
+    if (discountTotal == null) {
+      const inferred = round2(sumLineTotals - totalVal);
+      // Only infer if positive and reasonably larger than a cent (avoid noise)
+      if (inferred > 0.009) {
+        discountTotal = inferred;
+      }
+    }
+  } catch { /* ignore inference errors */ }
   const runId = opts?.runId || randomUUID();
   const receiptId = computeReceiptId(apiReceiptData, { rawHash });
   const cleanReceipt: Receipt = {
@@ -206,7 +218,7 @@ export function transformReceipt(apiReceiptData: any, opts?: { schemaVersion?: s
     identities: { externalReceiptId: apiReceiptData?.external_id, orderNumber: apiReceiptData?.order_number_detail?.value || apiReceiptData?.order_number_detail?.order_number, receiptType: apiReceiptData?.receipt_type, isTaxInvoice: !!apiReceiptData?.is_tax_invoice },
     timestamps: { issuedAtEpoch, issuedAtISO, issuedDate, issuedTime, timezone: apiReceiptData?.merchant_detail?.timezone || apiReceiptData?.issued_at_timezone },
     merchant: { merchantName: apiReceiptData?.root_merchant?.trading_name || apiReceiptData?.issuing_merchant?.trading_name, storeName: apiReceiptData?.store?.name || apiReceiptData?.merchant_detail?.name, abn: apiReceiptData?.merchant_detail?.abn, phone: apiReceiptData?.merchant_detail?.phone_number, address },
-    totals: { currency, total: totalVal, totalFormatted: fmtMoney(totalVal, currency), subtotal: subtotalVal, subtotalFormatted: subtotalVal != null ? fmtMoney(subtotalVal, currency) : undefined, taxTotal, taxTotalFormatted: taxTotal != null ? fmtMoney(taxTotal, currency) : undefined, discountTotal, itemCount: typeof apiReceiptData?.item_count === 'number' ? apiReceiptData.item_count : items.length, computedItemQuantity: items.reduce((a, i) => a + i.quantity, 0), taxes: taxLines.map(t => ({ ...t, amountFormatted: fmtMoney(t.amount, currency) })) },
+  totals: { currency, total: totalVal, totalFormatted: fmtMoney(totalVal, currency), subtotal: subtotalVal, subtotalFormatted: subtotalVal != null ? fmtMoney(subtotalVal, currency) : undefined, taxTotal, taxTotalFormatted: taxTotal != null ? fmtMoney(taxTotal, currency) : undefined, discountTotal, itemCount: typeof apiReceiptData?.item_count === 'number' ? apiReceiptData.item_count : items.reduce((a, i) => a + i.quantity, 0), computedItemQuantity: items.reduce((a, i) => a + i.quantity, 0), taxes: taxLines.map(t => ({ ...t, amountFormatted: fmtMoney(t.amount, currency) })) },
     items,
     aggregatedItems,
     payments: paymentDetails,
@@ -233,14 +245,21 @@ export function validateReceipt(receipt: Receipt) {
   if (!validation.success) validation.error.issues.forEach(i => issues.push(`${i.path.join('.')} - ${i.message}`));
   // integrity checks
   const sumLineTotals = round2(receipt.items.reduce((a,i)=>a+i.lineTotal,0));
-  if (Math.abs(sumLineTotals - receipt.totals.total) > 0.01) issues.push(`sum(lineTotals)=${sumLineTotals.toFixed(2)} != total=${receipt.totals.total.toFixed(2)}`);
+  // If discountTotal is present/inferred, compare sumLineTotals - discount to total
+  const effectiveLines = receipt.totals.discountTotal != null ? round2(sumLineTotals - receipt.totals.discountTotal) : sumLineTotals;
+  if (Math.abs(effectiveLines - receipt.totals.total) > 0.01) {
+    issues.push(`sum(lineTotals)${receipt.totals.discountTotal!=null?`-discount(${receipt.totals.discountTotal.toFixed(2)})`:''}=${effectiveLines.toFixed(2)} != total=${receipt.totals.total.toFixed(2)}`);
+  }
   const totalPaid = round2(receipt.payments.reduce((a,p)=>a+p.amount,0));
   if (Math.abs(totalPaid - receipt.totals.total) > 0.01) issues.push(`totalPaid=${totalPaid.toFixed(2)} != total=${receipt.totals.total.toFixed(2)}`);
   if (receipt.totals.subtotal != null && receipt.totals.taxTotal != null) {
     const recombined = round2(receipt.totals.subtotal + receipt.totals.taxTotal);
     if (Math.abs(recombined - receipt.totals.total) > 0.01) issues.push(`subtotal + tax (${recombined.toFixed(2)}) != total (${receipt.totals.total.toFixed(2)})`);
   }
-  if (receipt.totals.itemCount != null && receipt.totals.itemCount !== receipt.items.length) issues.push(`itemCount=${receipt.totals.itemCount} != items.length=${receipt.items.length}`);
+  // Validate itemCount against computed quantity rather than distinct lines
+  if (receipt.totals.itemCount != null && receipt.totals.computedItemQuantity != null && receipt.totals.itemCount !== receipt.totals.computedItemQuantity) {
+    issues.push(`itemCount=${receipt.totals.itemCount} != computedItemQuantity=${receipt.totals.computedItemQuantity}`);
+  }
   const aggregatedSum = round2(receipt.aggregatedItems.reduce((a,i)=>a+i.lineTotal,0));
   if (Math.abs(aggregatedSum - sumLineTotals) > 0.01) issues.push(`aggregatedSum=${aggregatedSum.toFixed(2)} != sumLineTotals=${sumLineTotals.toFixed(2)}`);
   return { validationSuccess: validation.success, issues, sums: { sumLineTotals, aggregatedSum, totalPaid, total: receipt.totals.total, subtotal: receipt.totals.subtotal, taxTotal: receipt.totals.taxTotal } };

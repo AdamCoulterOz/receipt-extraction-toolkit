@@ -1,0 +1,35 @@
+{
+  "xref": "R-X-a0b243625eb945619753e5f391107a8e",
+  "root_merchant": { "xref": "M-X-3b1df7b366c61d1cc6a9dffffc7c956653bc7a4c", "trading_name": "Kmart" },
+  "issuing_merchant": { "xref": "M-X-3b1df7b366c61d1cc6a9dffffc7c956653bc7a4c", "trading_name": "Kmart" },
+  "store": { "xref": "S-X-e995373f4df1708f90b4f5d2a6ca8e3e83123add", "name": "Kmart Nowra" },
+  "external_id": "1094202505171534939620",
+  "basket_items": [
+    { "product": { "name": "LARGE REUSE BAG", "title": "LARGE REUSE BAG", "pricing": { "price": 0.3, "discount": 0, "currency_code": "AUD", "tax": 0, "tax_type": "AU_GST" }, "taxes": [{ "amount": 0, "tax_type": "AU_GST" }], "quantity_purchased": 0, "item_properties": [ { "title": "APN: 9300800796839" }, { "title": "SKU: 42676126" }, { "title": "Colour: WHITE" }, { "title": "Size: MISCELLANEOUS" } ] } },
+    { "product": { "name": "ASHER KB QCS", "title": "ASHER KB QCS", "pricing": { "price": 25, "discount": 0, "currency_code": "AUD", "tax": 0, "tax_type": "AU_GST" }, "taxes": [{ "amount": 0, "tax_type": "AU_GST" }], "quantity_purchased": 0, "item_properties": [ { "title": "APN: 9341110018051" }, { "title": "SKU: 43286225" }, { "title": "Colour: PRINT" }, { "title": "Size: KB" } ] } },
+    { "product": { "name": "500TC EURO P/CASE", "title": "500TC EURO P/CASE", "pricing": { "price": 26, "discount": 0, "currency_code": "AUD", "tax": 0, "tax_type": "AU_GST" }, "taxes": [{ "amount": 0, "tax_type": "AU_GST" }], "quantity_purchased": 2, "item_properties": [ { "title": "Quantity: 2" }, { "title": "APN: 9341110014176" }, { "title": "SKU: 43159161" }, { "title": "Colour: WHITE" }, { "title": "Size: MISCELLANEOUS" } ] } },
+    { "product": { "name": "500 ANTRCITE QB SS", "title": "500 ANTRCITE QB SS", "pricing": { "price": 59, "discount": 0, "currency_code": "AUD", "tax": 0, "tax_type": "AU_GST" }, "taxes": [{ "amount": 0, "tax_type": "AU_GST" }], "quantity_purchased": 0, "item_properties": [ { "title": "APN: 9341110016965" }, { "title": "SKU: 43220519" }, { "title": "Colour: BLACK" }, { "title": "Size: QB" } ] } }
+  ],
+  "issued_at": 1747460040,
+  "issued_at_iso": "2025-05-17T15:34:00+10:00",
+  "issued_at_timezone": "Australia/Sydney",
+  "merchant_detail": {
+    "name": "Kmart Nowra",
+    "phone_number": "244293000",
+    "abn": "73 004 700 485",
+    "address": { "street": "Stockland Shopping Centre , Cnr East & Junction Sts", "suburb": "Nowra", "state": "NSW", "postcode": "2541", "country_code": "AU", "street_2": "" },
+    "timezone": "Australia/Sydney"
+  },
+  "is_tax_invoice": true,
+  "total_tax": 10.03,
+  "tax_details": [ { "tax_type": "GST", "title": "GST included in total", "amount": { "price": 10.03, "currency_code": "AUD" } } ],
+  "total_price": 110.3,
+  "currency_code": "AUD",
+  "payments": [ { "name": "VISA (*****248)", "amount": 110.3 } ],
+  "payment_method_details": [ { "payment_type": "visa", "title": "**** *248", "amount": { "price": 110.3, "currency_code": "AUD" } } ],
+  "raw_payment_data": "MERCHANT ID: 0218487810000000\nTERMINAL ID: K09493\nSTAN: 130154\nRRN: 000093962001\nAUTH: 549253\nACCT TYPE: CREDIT\nTRANS TYPE: PURCHASE\nTOTAL: A$110.30\nDATE/TIME: 17/05/2025 15:34",
+  "total_discount": null,
+  "item_count": 5,
+  "order_number_detail": { "title": "SALE:", "value": "9620 1094 0093" },
+  "loyalty": [ { "status": "missing_consent", "title": "flybuys", "description": "Loyalty ID: *********7110" } ]
+}
