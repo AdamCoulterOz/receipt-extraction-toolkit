@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'fs/promises';
 import path from 'node:path';
@@ -286,44 +285,4 @@ export function redactReceipt(receipt: Receipt, opts?: { enforce?: boolean }) {
   return receipt;
 }
 
-// ----------------------
-// JSON Schema Emission
-// ----------------------
-export async function writeJsonSchema(outDir: string) {
-  try {
-    const schema = zodToJsonSchema(zReceipt, 'Receipt');
-    (schema as any).$id = `https://schemas.local/receipt/${SCHEMA_VERSION}/receipt.schema.json`;
-    await fs.mkdir(outDir, { recursive: true });
-    await fs.writeFile(path.join(outDir, 'receipt.schema.json'), JSON.stringify(schema, null, 2), 'utf-8');
-  } /* istanbul ignore next -- schema generation failure */ catch {/* ignore */}
-}
-
-// OpenAPI 3.1 spec emission embedding the JSON Schema
-export async function writeOpenApi(outDir: string) {
-  try {
-    const schema = zodToJsonSchema(zReceipt, 'Receipt');
-    const openapi = {
-      openapi: '3.1.0',
-      info: { title: 'Receipt Extraction API', version: SCHEMA_VERSION },
-      components: { schemas: { Receipt: schema } },
-    };
-    await fs.mkdir(outDir, { recursive: true });
-    await fs.writeFile(path.join(outDir, 'openapi.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
-  } /* istanbul ignore next -- openapi emission failure */ catch {/* ignore */}
-}
-
-// OpenAPI 3.0 downgraded (basic compatibility; strips potential $schema keys)
-export async function writeOpenApi30(outDir: string) {
-  try {
-    const schema = zodToJsonSchema(zReceipt, 'Receipt');
-    // Remove top-level $schema for 3.0 consumers
-    if ((schema as any).$schema) delete (schema as any).$schema;
-    const openapi = {
-      openapi: '3.0.3',
-      info: { title: 'Receipt Extraction API (3.0)', version: SCHEMA_VERSION },
-      components: { schemas: { Receipt: schema } }
-    };
-    await fs.mkdir(outDir, { recursive: true });
-    await fs.writeFile(path.join(outDir, 'openapi30.receipt.json'), JSON.stringify(openapi, null, 2), 'utf-8');
-  } /* istanbul ignore next -- openapi30 emission failure */ catch {/* ignore */}
-}
+// (JSON Schema & OpenAPI emission removed)

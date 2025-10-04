@@ -4,7 +4,7 @@
 import * as pw from 'playwright';
 import fs from 'fs/promises';
 import path from 'node:path';
-import { transformReceipt, validateReceipt, writeJsonSchema, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt, writeOpenApi, writeOpenApi30 } from './receipt.js';
+import { transformReceipt, validateReceipt, SCHEMA_VERSION, TRANSFORM_VERSION, redactReceipt } from './receipt.js';
 import { randomUUID } from 'node:crypto';
 
 // ---- tiny CLI (no deps) ----
@@ -166,7 +166,7 @@ async function processSingle(url: string, index: number | undefined, shared: { b
   const valFile = index != null ? `receipt.${index}.validation.json` : 'receipt.validation.json';
   await fs.writeFile(path.join(OUT_DIR, cleanFile), JSON.stringify(receipt, null, 2), 'utf-8');
   await fs.writeFile(path.join(OUT_DIR, valFile), JSON.stringify(validation, null, 2), 'utf-8');
-  if (index == null) { await writeJsonSchema(OUT_DIR); await writeOpenApi(OUT_DIR); await writeOpenApi30(OUT_DIR); }
+  // (schema/openapi emission removed)
   const durationMs = Date.now() - start;
   log('info', 'receipt.processed', { url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues.length });
   return { ok: true, url, total: receipt.totals.total, items: receipt.items.length, durationMs, issues: validation.issues, receiptId: receipt.meta.receiptId };
@@ -203,9 +203,7 @@ async function main() {
       await Promise.all(workers);
     }
     await browser.close();
-  await writeJsonSchema(OUT_DIR); // write once
-  await writeOpenApi(OUT_DIR);
-  await writeOpenApi30(OUT_DIR);
+  // (schema/openapi emission removed in batch mode)
   const manifest = { ts: new Date().toISOString(), runId, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION, count: results.length, ok: results.filter(r=>r.ok).length, failed: results.filter(r=>!r.ok).length, avgDurationMs: Math.round(results.filter(r=>r.ok).reduce((a,r)=>a+(r.durationMs||0),0)/Math.max(1,results.filter(r=>r.ok).length)), results: results.map(r => ({ ...r, schemaVersion: SCHEMA_VERSION, transformVersion: TRANSFORM_VERSION })) };
     await fs.writeFile(path.join(OUT_DIR, 'batch.manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     log('info', 'batch.done', { ok: manifest.ok, failed: manifest.failed });

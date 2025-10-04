@@ -25,8 +25,7 @@
     "validate": "npm run validate:strict",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage",
-    "check:schema-version": "node scripts/check-schema-version.js",
+  "coverage": "vitest run --coverage",
     "release": "semantic-release"
   },
   "keywords": [],
@@ -41,19 +40,18 @@
   ],
   "dependencies": {
     "playwright": "^1.55.1",
-  "zod": "^3.24.1"
+  "zod": "4.1.11"
   },
   "devDependencies": {
-    "@types/node": "^24.6.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "zod-to-json-schema": "^3.24.6",
-    "vitest": "^2.0.5",
-  "@vitest/coverage-v8": "^2.0.5",
-    "semantic-release": "^23.0.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@semantic-release/github": "^9.0.6",
-    "@semantic-release/npm": "^11.0.3"
+    "@semantic-release/github": "^11.0.6",
+    "@semantic-release/npm": "^12.0.2",
+    "@types/node": "^24.6.2",
+    "@vitest/coverage-v8": "^3.2.4",
+    "semantic-release": "^24.2.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

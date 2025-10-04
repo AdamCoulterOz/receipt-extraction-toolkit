@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { transformReceipt, redactReceipt, validateReceipt, computeReceiptId, writeJsonSchema, writeOpenApi, writeOpenApi30 } from '../receipt.js';
+import { transformReceipt, redactReceipt, validateReceipt, computeReceiptId } from '../receipt.js';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'node:path';
@@ -99,14 +99,6 @@ describe('additional coverage paths', () => {
     expect(val.issues.find(i => i.includes('items') && i.includes('quantity'))).toBeTruthy();
   });
 
-  it('emits schema and openapi specs', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-schema-'));
-    await writeJsonSchema(dir);
-    await writeOpenApi(dir);
-    await writeOpenApi30(dir);
-    const entries = await fs.readdir(dir);
-    expect(entries).toEqual(expect.arrayContaining(['receipt.schema.json','openapi.receipt.json','openapi30.receipt.json']));
-  });
 });
 
 describe('branch coverage expansions', () => {
@@ -196,13 +188,6 @@ describe('branch coverage expansions', () => {
     expect(r.totals.taxes.length).toBe(0);
   });
 
-  it('writeJsonSchema graceful failure path (invalid outDir file path)', async () => {
-    // Create a file and then attempt to use it as a directory to trigger catch (best-effort)
-    const tmpBase = path.join(os.tmpdir(), 'receipt-file-as-dir');
-    await fs.writeFile(tmpBase, 'not a dir');
-    // Should not throw
-    await writeJsonSchema(tmpBase + '/sub').catch(()=>{});
-  });
 
   it('computeReceiptId fallback on error path', () => {
     const badApi: any = { get external_id() { throw new Error('boom'); }, total_price: 10, issued_at: 1 };
